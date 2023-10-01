@@ -1,52 +1,47 @@
-#!/usr/bin/env python3
-
-from flask import Flask, make_response, jsonify, request, session
-from flask_migrate import Migrate
-from flask_restful import Api, Resource
-
-from models import db, Article, User
+from flask import Flask, request, session, jsonify, redirect, url_for, render_template
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = b'Y\xf1Xz\x00\xad|eQ\x80t \xca\x1a\x10K'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+app.secret_key = 'your_secret_key'  # Replace with a secure secret key
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///user.db'  # SQLite database
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.json.compact = False
 
-migrate = Migrate(app, db)
+db = SQLAlchemy(app)
 
-db.init_app(app)
+from models import User
 
-api = Api(app)
+@app.route('/')
+def home():
+    if 'user_id' in session:
+        return f'Hello, {session["username"]}! <a href="/logout">Logout</a>'
+    return 'Welcome! <a href="/login">Login</a>'
 
-class ClearSession(Resource):
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
 
-    def delete(self):
-    
-        session['page_views'] = None
-        session['user_id'] = None
+        user = User.query.filter_by(username=username).first()
 
-        return {}, 204
+        if user and user.check_password(password):
+            session['user_id'] = user.id
+            session['username'] = user.username
+            return redirect('/')
+        else:
+            return 'Login failed. <a href="/login">Try again</a>'
 
-class IndexArticle(Resource):
-    
-    def get(self):
-        articles = [article.to_dict() for article in Article.query.all()]
-        return articles, 200
+    return render_template('login.html')  # Create a login form in a template
 
-class ShowArticle(Resource):
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/')
 
-    def get(self, id):
-        session['page_views'] = 0 if not session.get('page_views') else session.get('page_views')
-        session['page_views'] += 1
+if __name__ == '__main__':
+    app.run(debug=True)
 
-        if session['page_views'] <= 3:
-
-            article = Article.query.filter(Article.id == id).first()
-            article_json = jsonify(article.to_dict())
-
-            return make_response(article_json, 200)
-
-        return {'message': 'Maximum pageview limit reached'}, 401
 
 api.add_resource(ClearSession, '/clear')
 api.add_resource(IndexArticle, '/articles')
